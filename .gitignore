@@ -3,3 +3,9 @@ __pycache__/
 .env
 .streamlit/
 .vscode/
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
