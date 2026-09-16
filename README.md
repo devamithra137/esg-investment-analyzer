@@ -23,9 +23,10 @@ The system fetches live market data, computes sustainability metrics, evaluates 
 
 The platform exposes:
 
-- a **REST API** built with FastAPI
-- an **interactive analytics dashboard** built with Streamlit
+- a **REST API** built with FastAPI (with async threadpool execution & TTL caching)
+- an **interactive analytics dashboard** built with Streamlit & Plotly
 - a **CLI reporting tool** for terminal-based analysis
+- a **comprehensive automated test suite** built with `pytest`
 
 This project demonstrates how ESG indicators can be integrated with quantitative financial analysis.
 
@@ -35,14 +36,14 @@ This project demonstrates how ESG indicators can be integrated with quantitative
 
 | Category | Capability |
 |--------|-------------|
-| Market Data | Real-time price quotes and 1-year price history via Yahoo Finance |
-| ESG Scoring | Environmental, Social, and Governance sub-scores |
-| Risk Analysis | Annualized volatility and three-tier risk classification |
-| Investment Rating | Combined ESG + financial risk sustainability score |
-| REST API | FastAPI service with OpenAPI documentation |
-| Dashboard | Interactive Streamlit analytics dashboard |
-| CLI Tool | Terminal-based investment report |
-| Comparison Tool | Multi-company ESG comparison with radar charts |
+| Market Data | Real-time price quotes and 1-year price history via Yahoo Finance with 10-minute TTL caching |
+| ESG Scoring | Centralized Environmental, Social, and Governance sub-scores with sector baselines |
+| Risk Analysis | Log returns, sample standard deviation, annualized volatility, and three-tier risk classification |
+| Investment Rating | Combined ESG + financial risk sustainability score with score consistency capping for high-risk assets |
+| REST API | FastAPI service with OpenAPI documentation and Pydantic validation |
+| Dashboard | Interactive Streamlit analytics dashboard with environment-driven API configuration |
+| CLI Tool | UTF-8 compatible terminal-based investment report generator |
+| Testing Suite | Full offline `pytest` suite covering ESG, risk, rating, market data, and API endpoints |
 
 ---
 
@@ -52,21 +53,14 @@ This project demonstrates how ESG indicators can be integrated with quantitative
 User Input (Ticker)
         │
         ▼
-FastAPI API Layer
-(main.py)
+FastAPI API Layer (main.py)
         │
         ▼
 Core Analytics Pipeline
- ├── market_data.py
- ├── risk_analysis.py
- ├── investment_rating.py
-        │
-        ▼
-ESG Scoring Engine
-(Environment / Social / Governance)
-        │
-        ▼
-Investment Sustainability Rating
+ ├── market_data.py        ──► yfinance API + In-Memory TTL Cache
+ ├── esg_scoring.py        ──► Centralized ESG Engine (Sector Profiles + Ticker MD5 Seed)
+ ├── risk_analysis.py      ──► Log Returns & Annualized Volatility (σ)
+ └── investment_rating.py ──► Blended Sustainability Rating Matrix & Capped Score
         │
         ▼
 Streamlit Dashboard / CLI Output
@@ -79,27 +73,28 @@ Streamlit Dashboard / CLI Output
 ```
 Ticker Symbol
     │
-    ├─► Fetch market data (yfinance)
+    ├─► Fetch market data (yfinance with TTL Cache & Chronological Date Order)
     │
-    ├─► Generate ESG scores
+    ├─► Generate ESG scores (Sector baselines + Ticker MD5 noise offset)
     │
-    ├─► Calculate volatility and financial risk
+    ├─► Calculate volatility and financial risk (ddof=1 sample std dev × √252)
     │
-    └─► Compute investment sustainability rating
+    └─► Compute investment sustainability rating (60% ESG + 40% Risk Factor, capped for High Risk)
 ```
 
 ---
 
 # ESG Decision Matrix
 
-| ESG Tier | Risk Level | Rating |
-|---------|------------|--------|
-| High | Low | High Sustainability |
-| High | Medium | Sustainable Growth |
-| Medium | Low | Sustainable Growth |
-| Medium | Medium | Sustainable Growth |
-| Medium | High | High Risk |
-| Low | Any | High Risk |
+| ESG Tier | Risk Level | Rating Label | Score Constraint |
+|---------|------------|--------------|------------------|
+| High ($\ge 70$) | Low ($< 0.20$) | High Sustainability | 0 – 100 |
+| High ($\ge 70$) | Medium ($0.20 - 0.40$) | Sustainable Growth | 0 – 100 |
+| High ($\ge 70$) | High ($\ge 0.40$) | High Risk | Capped $\le 49$ |
+| Medium ($40 - 70$) | Low ($< 0.20$) | Sustainable Growth | 0 – 100 |
+| Medium ($40 - 70$) | Medium ($0.20 - 0.40$) | Sustainable Growth | 0 – 100 |
+| Medium ($40 - 70$) | High ($\ge 0.40$) | High Risk | Capped $\le 49$ |
+| Low ($< 40$) | Any | High Risk | Capped $\le 49$ |
 
 ---
 
@@ -107,13 +102,14 @@ Ticker Symbol
 
 | Layer | Technology |
 |------|-------------|
-| Language | Python |
-| API Framework | FastAPI |
+| Language | Python 3.11+ |
+| API Framework | FastAPI, Starlette, Pydantic v2 |
 | Dashboard | Streamlit |
-| Visualization | Plotly |
+| Visualization | Plotly (graph_objects) |
 | Market Data | yfinance |
-| Data Processing | Pandas / NumPy |
-| HTTP Client | Requests |
+| Data Processing | Pandas, NumPy |
+| HTTP Client | Requests, HTTPX |
+| Testing | pytest, pytest-asyncio |
 | Server | Uvicorn |
 
 ---
@@ -123,28 +119,45 @@ Ticker Symbol
 ```
 esg-investment-analyzer
 │
-├── main.py
-├── dashboard.py
-├── market_data.py
-├── risk_analysis.py
-├── investment_rating.py
-├── test_analysis.py
-├── requirements.txt
-└── README.md
+├── main.py                # FastAPI REST Service & API Routes
+├── esg_scoring.py         # Centralized ESG Engine (Sector Profiles & Deterministic Seeding)
+├── market_data.py         # Market Data Engine (yfinance Ingestion & 10-Min TTL Cache)
+├── risk_analysis.py       # Financial Risk Engine (Log Returns & Annualized Volatility)
+├── investment_rating.py  # Blended Investment Sustainability Rating Matrix
+├── dashboard.py           # Interactive Streamlit Bloomberg-Style Dashboard
+├── cli.py                 # Command-Line Report Generator (UTF-8 Windows Safe)
+├── requirements.txt       # Pinned production runtime dependencies
+├── requirements-dev.txt   # Development and testing dependencies
+└── tests/                 # Automated Pytest Test Suite (100% Offline)
+    ├── __init__.py
+    ├── test_esg_scoring.py
+    ├── test_risk_analysis.py
+    ├── test_investment_rating.py
+    ├── test_market_data.py
+    └── test_api.py
 ```
 
 ---
 
-# Installation
+# Environment Variables
 
-## Clone Repository
+| Variable | Default Value | Description |
+|----------|---------------|-------------|
+| `API_BASE_URL` | `http://localhost:8000` | Backend API base URL used by Streamlit dashboard |
+| `CORS_ORIGINS` | `http://localhost:8501` | Comma-separated CORS allowed origins for FastAPI |
+
+---
+
+# Installation & Setup
+
+## 1. Clone Repository
 
 ```bash
 git clone https://github.com/devamithra137/esg-investment-analyzer.git
 cd esg-investment-analyzer
 ```
 
-## Create Virtual Environment
+## 2. Create Virtual Environment
 
 ```bash
 python -m venv .venv
@@ -152,22 +165,30 @@ python -m venv .venv
 
 Activate:
 
-Windows
+Windows:
 
 ```bash
 .venv\Scripts\activate
 ```
 
-Mac / Linux
+Mac / Linux:
 
 ```bash
 source .venv/bin/activate
 ```
 
-## Install Dependencies
+## 3. Install Dependencies
+
+Production runtime dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
+
+Development and testing dependencies:
+
+```bash
+pip install -r requirements-dev.txt
 ```
 
 ---
@@ -182,12 +203,12 @@ uvicorn main:app --reload --port 8000
 
 API endpoints:
 
+```text
+http://localhost:8000/          ← Service metadata
+http://localhost:8000/health     ← Liveness check
+http://localhost:8000/analyze/{ticker}  ← Full analysis
+http://localhost:8000/docs      ← OpenAPI Swagger UI
 ```
-http://localhost:8000/analyze/{ticker}
-http://localhost:8000/docs
-```
-
----
 
 ## Start Dashboard
 
@@ -199,7 +220,7 @@ streamlit run dashboard.py
 
 Dashboard:
 
-```
+```text
 http://localhost:8501
 ```
 
@@ -207,16 +228,32 @@ http://localhost:8501
 
 # CLI Analysis
 
-Run analysis directly from terminal:
+Run investment report directly from terminal:
 
 ```bash
-python test_analysis.py AAPL
+python cli.py AAPL
 ```
 
 Multiple companies:
 
 ```bash
-python test_analysis.py TSLA MSFT NVDA
+python cli.py TSLA MSFT NVDA
+```
+
+---
+
+# Running Automated Tests
+
+Run the full automated test suite offline:
+
+```bash
+pytest
+```
+
+Verbose test output:
+
+```bash
+pytest -v
 ```
 
 ---
@@ -225,47 +262,45 @@ python test_analysis.py TSLA MSFT NVDA
 
 ```json
 {
- "ticker": "AAPL",
- "price": 189.40,
- "sector": "Technology",
- "environment": 71.3,
- "social": 74.8,
- "governance": 83.5,
- "esg_score": 75.8,
- "volatility": 0.2312,
- "risk_level": "MEDIUM",
- "investment_score": 69,
- "rating": "Sustainable Growth"
+  "ticker": "AAPL",
+  "price": 332.23,
+  "sector": "Technology",
+  "environment": 70.64,
+  "social": 64.16,
+  "governance": 80.47,
+  "esg_score": 71.64,
+  "volatility": 0.2512,
+  "risk_level": "MEDIUM",
+  "investment_score": 67,
+  "rating": "Sustainable Growth"
 }
 ```
 
 ---
 
-# Methodology
+# Methodology & ESG Transparency
 
 ## Volatility Calculation
 
-Annualized volatility is calculated using log returns:
+Annualized volatility ($\sigma$) is calculated using log returns:
 
-```
-σ = std(log(Pt / Pt-1)) × √252
-```
+$$\sigma = \text{std}\left(\ln\left(\frac{P_t}{P_{t-1}}\right), \text{ddof}=1\right) \times \sqrt{252}$$
 
-This reflects the annualized variability of stock returns.
+This accurately reflects the annualized variability of stock returns over 252 trading days per year.
+
+## ESG Scoring Methodology
+
+> **Important ESG Transparency Notice**:  
+> ESG metrics in this project are **simulated deterministically** using sector baseline profiles (e.g., Technology $E=68, S=72, G=80$; Energy $E=38, S=60, G=65$) combined with ticker MD5 hash-seeded uniform noise.  
+> They are **NOT** sourced from commercial ESG data providers such as MSCI ESG, Sustainalytics, or Refinitiv. The simulation guarantees reproducibility across runs while demonstrating how ESG indicators integrate into quantitative analytics pipelines.
 
 ---
 
-## ESG Scores
+# Limitations
 
-ESG scores are **simulated using deterministic sector-based models**.
-
-Real ESG data providers typically include:
-
-- MSCI ESG
-- Sustainalytics
-- Refinitiv
-
-The simulation ensures reproducibility while demonstrating ESG integration in analytics pipelines.
+- **yfinance Dependency**: Market data is fetched via Yahoo Finance's un-official web scraping library, which lacks an official SLA.
+- **Simulated ESG Data**: ESG scores are generated deterministically via sector profiles for educational/demo purposes rather than live commercial ESG APIs.
+- **In-Memory Cache Scope**: Market data caching uses a single-node in-memory TTL dictionary rather than a distributed cache like Redis.
 
 ---
 
@@ -273,13 +308,11 @@ The simulation ensures reproducibility while demonstrating ESG integration in an
 
 Possible extensions include:
 
-- Real ESG data integration
-- Portfolio-level ESG analysis
-- ESG screening for multiple tickers
-- Database storage for historical analysis
-- Docker deployment
-- CI/CD automation
-- Live ESG news sentiment analysis
+- Integration with commercial ESG data provider APIs
+- Distributed Redis caching and Celery background task processing
+- Portfolio-level ESG aggregation and risk screening
+- TimescaleDB / PostgreSQL database storage for historical price & rating tracking
+- Docker containerization & GitHub Actions CI/CD pipeline
 
 ---
 

@@ -14,8 +14,7 @@ Requires
     FastAPI backend running on http://localhost:8000
 """
 
-from __future__ import annotations
-
+import os
 import time
 from datetime import datetime
 from typing import Optional
@@ -34,7 +33,7 @@ st.set_page_config(
 )
 
 # ── Constants ───────────────────────────────────────────────────────────────
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 REQUEST_TIMEOUT = 30
 
 RATING_META = {
