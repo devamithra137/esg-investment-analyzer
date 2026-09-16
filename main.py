@@ -36,101 +36,10 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 # Internal module imports
 # ---------------------------------------------------------------------------
+from esg_scoring import compute_esg_composite, simulate_esg_scores
 from market_data import get_market_data
 from risk_analysis import analyse_risk
 from investment_rating import generate_investment_rating
-
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-)
-logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# ESG simulation constants
-# ---------------------------------------------------------------------------
-_ESG_SECTOR_PROFILES: dict[str, dict[str, float]] = {
-    # sector              env    soc    gov   (base score ± noise range)
-    "Technology":       {"E": 68, "S": 72, "G": 80},
-    "Healthcare":       {"E": 62, "S": 78, "G": 75},
-    "Financial Services":{"E": 55, "S": 65, "G": 82},
-    "Consumer Cyclical":{"E": 58, "S": 70, "G": 68},
-    "Industrials":      {"E": 50, "S": 64, "G": 70},
-    "Energy":           {"E": 38, "S": 60, "G": 65},
-    "Utilities":        {"E": 60, "S": 66, "G": 72},
-    "Basic Materials":  {"E": 42, "S": 62, "G": 67},
-    "Communication Services": {"E": 63, "S": 68, "G": 76},
-    "Real Estate":      {"E": 58, "S": 63, "G": 71},
-    "Consumer Defensive": {"E": 60, "S": 73, "G": 74},
-}
-_ESG_DEFAULT_PROFILE: dict[str, float] = {"E": 55, "S": 65, "G": 68}
-_ESG_NOISE_RANGE: float = 12.0  # ± points of deterministic variation
-_ESG_WEIGHTS: dict[str, float] = {"E": 0.40, "S": 0.30, "G": 0.30}
-
-
-# ---------------------------------------------------------------------------
-# ESG simulation helpers
-# ---------------------------------------------------------------------------
-def _ticker_seed(ticker: str) -> float:
-    """
-    Derive a stable float in [0, 1) from a ticker string.
-    Using MD5 ensures the same ticker always produces the same seed,
-    making ESG scores deterministic and reproducible across restarts.
-    """
-    digest = hashlib.md5(ticker.encode()).hexdigest()
-    return int(digest[:8], 16) / 0xFFFFFFFF
-
-
-def simulate_esg_scores(ticker: str, sector: str) -> dict[str, float]:
-    """
-    Generate deterministic ESG sub-scores for a given ticker and sector.
-
-    Simulation strategy
-    -------------------
-    1. Look up the sector's base score profile (or fall back to defaults).
-    2. Apply a ticker-seeded deterministic offset in [-noise, +noise].
-       The same ticker always produces the same offset, guaranteeing
-       consistent results across multiple requests.
-    3. Clamp each sub-score to [0, 100].
-
-    Parameters
-    ----------
-    ticker : str   Normalised uppercase stock symbol.
-    sector : str   GICS sector string from market_data.
-
-    Returns
-    -------
-    dict with keys: "environment", "social", "governance", each in [0, 100].
-    """
-    profile = _ESG_SECTOR_PROFILES.get(sector, _ESG_DEFAULT_PROFILE)
-    seed = _ticker_seed(ticker)
-
-    # Deterministic per-dimension offsets derived from the same seed
-    rng = np.random.default_rng(int(seed * 1_000_000))
-    offsets = rng.uniform(-_ESG_NOISE_RANGE, _ESG_NOISE_RANGE, size=3)
-
-    return {
-        "environment": round(float(np.clip(profile["E"] + offsets[0], 0, 100)), 2),
-        "social":      round(float(np.clip(profile["S"] + offsets[1], 0, 100)), 2),
-        "governance":  round(float(np.clip(profile["G"] + offsets[2], 0, 100)), 2),
-    }
-
-
-def compute_esg_composite(environment: float, social: float, governance: float) -> float:
-    """
-    Compute a weighted composite ESG score from three sub-scores.
-
-    Weights: Environmental 40 %, Social 30 %, Governance 30 %.
-    """
-    composite = (
-        environment * _ESG_WEIGHTS["E"]
-        + social     * _ESG_WEIGHTS["S"]
-        + governance * _ESG_WEIGHTS["G"]
-    )
-    return round(composite, 2)
 
 
 # ---------------------------------------------------------------------------

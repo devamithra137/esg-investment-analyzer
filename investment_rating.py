@@ -288,8 +288,8 @@ def generate_investment_rating(
     {'investment_score': 26, 'rating': 'High Risk'}
     """
     logger.info(
-        "── Generating investment rating  |  esg_score=%.1f  risk_level=%s ──",
-        float(esg_score) if isinstance(esg_score, (int, float)) else "?",
+        "── Generating investment rating  |  esg_score=%s  risk_level=%s ──",
+        str(esg_score),
         risk_level,
     )
 
@@ -305,6 +305,12 @@ def generate_investment_rating(
 
     # 4. Lookup qualitative rating
     rating = _lookup_rating(esg_tier, clean_risk)
+
+    # 5. Consistency check: Cap investment score for High Risk ratings
+    # Ensures an asset classified as "High Risk" is not assigned a misleadingly
+    # high numeric score (>= 50).
+    if rating == Rating.HIGH_RISK and investment_score > 49:
+        investment_score = 49
 
     result = {
         "investment_score": investment_score,

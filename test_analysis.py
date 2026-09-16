@@ -23,8 +23,7 @@ import sys
 import time
 from datetime import datetime
 
-import numpy as np
-
+from esg_scoring import compute_esg_composite, simulate_esg_scores
 from investment_rating import generate_investment_rating
 from market_data import get_market_data
 from risk_analysis import analyse_risk
@@ -56,41 +55,6 @@ USE_COLOR = _supports_color()
 def _c(code: str, text: str) -> str:
     """Wrap text in an ANSI code, or return plain text if colour unavailable."""
     return f"{code}{text}{C.RESET}" if USE_COLOR else text
-
-
-# ── ESG simulation (mirrors main.py — standalone, no API call needed) ────────
-_ESG_SECTOR_PROFILES: dict[str, dict[str, float]] = {
-    "Technology":              {"E": 68, "S": 72, "G": 80},
-    "Healthcare":              {"E": 62, "S": 78, "G": 75},
-    "Financial Services":      {"E": 55, "S": 65, "G": 82},
-    "Consumer Cyclical":       {"E": 58, "S": 70, "G": 68},
-    "Industrials":             {"E": 50, "S": 64, "G": 70},
-    "Energy":                  {"E": 38, "S": 60, "G": 65},
-    "Utilities":               {"E": 60, "S": 66, "G": 72},
-    "Basic Materials":         {"E": 42, "S": 62, "G": 67},
-    "Communication Services":  {"E": 63, "S": 68, "G": 76},
-    "Real Estate":             {"E": 58, "S": 63, "G": 71},
-    "Consumer Defensive":      {"E": 60, "S": 73, "G": 74},
-}
-_ESG_DEFAULT_PROFILE: dict[str, float] = {"E": 55, "S": 65, "G": 68}
-_ESG_NOISE_RANGE: float = 12.0
-_ESG_WEIGHTS: dict[str, float] = {"E": 0.40, "S": 0.30, "G": 0.30}
-
-
-def _simulate_esg(ticker: str, sector: str) -> dict[str, float]:
-    profile = _ESG_SECTOR_PROFILES.get(sector, _ESG_DEFAULT_PROFILE)
-    seed    = int(hashlib.md5(ticker.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
-    rng     = np.random.default_rng(int(seed * 1_000_000))
-    offsets = rng.uniform(-_ESG_NOISE_RANGE, _ESG_NOISE_RANGE, size=3)
-    return {
-        "environment": round(float(np.clip(profile["E"] + offsets[0], 0, 100)), 2),
-        "social":      round(float(np.clip(profile["S"] + offsets[1], 0, 100)), 2),
-        "governance":  round(float(np.clip(profile["G"] + offsets[2], 0, 100)), 2),
-    }
-
-
-def _esg_composite(e: float, s: float, g: float) -> float:
-    return round(e * _ESG_WEIGHTS["E"] + s * _ESG_WEIGHTS["S"] + g * _ESG_WEIGHTS["G"], 2)
 
 
 # ── Report rendering helpers ─────────────────────────────────────────────────
@@ -157,8 +121,8 @@ def run_analysis(ticker: str) -> dict:
         raise ValueError(f"No historical price data returned for '{ticker}'.")
 
     # Step 2 — ESG simulation
-    esg_sub   = _simulate_esg(ticker, sector)
-    esg_score = _esg_composite(
+    esg_sub   = simulate_esg_scores(ticker, sector)
+    esg_score = compute_esg_composite(
         esg_sub["environment"], esg_sub["social"], esg_sub["governance"]
     )
 
