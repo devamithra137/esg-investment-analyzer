@@ -1,18 +1,18 @@
 """
-test_analysis.py
-----------------
+cli.py
+------
 Command-line investment report for the Real-Time ESG Investment Analyzer.
 Runs the full pipeline — market data → ESG → risk → rating — and prints
 a formatted terminal report without needing the dashboard or API server.
 
 Usage
 -----
-    python test_analysis.py AAPL
-    python test_analysis.py TSLA MSFT NVDA          # multiple tickers
-    python test_analysis.py --help
+    python cli.py AAPL
+    python cli.py TSLA MSFT NVDA          # multiple tickers
+    python cli.py --help
 
 Author  : ESG Investment Analyzer
-Version : 1.0.0
+Version : 1.1.0
 """
 
 from __future__ import annotations
@@ -22,6 +22,15 @@ import hashlib
 import sys
 import time
 from datetime import datetime
+
+
+def _configure_output_encoding() -> None:
+    """Ensure standard output uses UTF-8 encoding across operating systems."""
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
 
 from esg_scoring import compute_esg_composite, simulate_esg_scores
 from investment_rating import generate_investment_rating
@@ -257,13 +266,13 @@ def print_report(d: dict) -> None:
 # ── CLI entry point ───────────────────────────────────────────────────────────
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="test_analysis",
+        prog="cli",
         description="Real-Time ESG Investment Analyzer — CLI Report",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python test_analysis.py AAPL\n"
-            "  python test_analysis.py TSLA MSFT NVDA\n"
+            "  python cli.py AAPL\n"
+            "  python cli.py TSLA MSFT NVDA\n"
         ),
     )
     parser.add_argument(
@@ -276,6 +285,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    _configure_output_encoding()
     parser = build_arg_parser()
     args   = parser.parse_args()
 
