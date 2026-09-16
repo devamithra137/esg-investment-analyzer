@@ -26,10 +26,11 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Optional
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Path, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -95,10 +96,18 @@ class AnalysisResponse(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """Structured error payload."""
-    detail:  str = Field(..., description="Human-readable error message")
-    ticker:  str = Field(..., description="The ticker that triggered the error")
-    code:    int = Field(..., description="HTTP status code")
+    """Structured error payload matching OpenAPI specification."""
+    detail: str = Field(..., description="Human-readable error message")
+    ticker: Optional[str] = Field(None, description="The ticker that triggered the error, if applicable")
+    code:   int = Field(..., description="HTTP status code")
+
+
+def _extract_ticker_from_request(request: Request) -> Optional[str]:
+    """Extract ticker symbol from request URL path if present (e.g. /analyze/{ticker})."""
+    path_parts = [p for p in request.url.path.strip("/").split("/") if p]
+    if len(path_parts) >= 2 and path_parts[0].lower() == "analyze":
+        return path_parts[1].upper()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -161,22 +170,51 @@ async def add_process_time_header(request: Request, call_next):
 # ---------------------------------------------------------------------------
 # Exception handlers
 # ---------------------------------------------------------------------------
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Format Pydantic / FastAPI RequestValidationErrors into structured ErrorResponse payloads."""
+    logger.warning("RequestValidationError on %s — %s", request.url.path, exc)
+    ticker = _extract_ticker_from_request(request)
+    content = {
+        "detail": f"Invalid path or query parameter: {exc.errors()}",
+        "code": 422,
+    }
+    if ticker:
+        content["ticker"] = ticker
+    return JSONResponse(status_code=422, content=content)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Format HTTPExceptions into structured ErrorResponse payloads."""
+    logger.warning("HTTPException %d on %s — %s", exc.status_code, request.url.path, exc.detail)
+    ticker = _extract_ticker_from_request(request)
+    content = {"detail": str(exc.detail), "code": exc.status_code}
+    if ticker:
+        content["ticker"] = ticker
+    return JSONResponse(status_code=exc.status_code, content=content)
+
+
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
+    """Format ValueErrors into structured ErrorResponse payloads."""
     logger.warning("ValueError on %s — %s", request.url.path, exc)
-    return JSONResponse(
-        status_code=422,
-        content={"detail": str(exc), "code": 422},
-    )
+    ticker = _extract_ticker_from_request(request)
+    content = {"detail": str(exc), "code": 422}
+    if ticker:
+        content["ticker"] = ticker
+    return JSONResponse(status_code=422, content=content)
 
 
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
+    """Format unhandled exceptions into structured ErrorResponse payloads."""
     logger.error("Unhandled exception on %s — %s", request.url.path, exc, exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "An unexpected server error occurred.", "code": 500},
-    )
+    ticker = _extract_ticker_from_request(request)
+    content = {"detail": "An unexpected server error occurred.", "code": 500}
+    if ticker:
+        content["ticker"] = ticker
+    return JSONResponse(status_code=500, content=content)
 
 
 # ---------------------------------------------------------------------------

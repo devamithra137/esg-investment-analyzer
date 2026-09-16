@@ -75,6 +75,9 @@ def test_analyze_ticker_invalid_regex_format_returns_422(invalid_ticker):
     """Test Pydantic regex pattern validation rejection (HTTP 422)."""
     response = client.get(f"/analyze/{invalid_ticker}")
     assert response.status_code == 422
+    data = response.json()
+    assert data["code"] == 422
+    assert "ticker" in data or "detail" in data
 
 
 @patch("main.get_market_data")
@@ -86,6 +89,8 @@ def test_analyze_ticker_not_found_returns_404(mock_get_market_data):
     assert response.status_code == 404
     data = response.json()
     assert "No market data found" in data["detail"]
+    assert data["code"] == 404
+    assert data["ticker"] == "NOTFOUND"
 
 
 @patch("main.get_market_data")
@@ -97,3 +102,5 @@ def test_analyze_ticker_upstream_error_returns_502(mock_get_market_data):
     assert response.status_code == 502
     data = response.json()
     assert "Failed to retrieve market data" in data["detail"]
+    assert data["code"] == 502
+    assert data["ticker"] == "AAPL"
