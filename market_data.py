@@ -3,15 +3,19 @@ market_data.py
 --------------
 Fetches real-time and historical stock market data using yfinance.
 Computes daily returns and annualized volatility.
+Includes thread-safe in-memory TTL caching (10 minutes) for fast repeat queries.
 
 Author  : ESG Investment Analyzer
-Version : 1.0.0
+Version : 1.1.0
 """
 
 from __future__ import annotations
 
+import copy
 import logging
+import time
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import Optional
 
 import numpy as np
@@ -28,10 +32,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants & Cache Configuration
 # ---------------------------------------------------------------------------
 HISTORY_PERIOD: str = "1y"          # yfinance period string for 1 year
 TRADING_DAYS_PER_YEAR: int = 252    # standard annualisation factor
+CACHE_TTL_SECONDS: int = 600        # 10 minutes cache TTL
+
+# Thread-safe in-memory cache: ticker -> (timestamp, data_dict)
+_CACHE: dict[str, tuple[float, dict]] = {}
+_CACHE_LOCK: Lock = Lock()
+
+
+def clear_cache() -> None:
+    """Clear all cached market data entries."""
+    with _CACHE_LOCK:
+        _CACHE.clear()
+        logger.info("Market data cache cleared.")
 
 
 # ---------------------------------------------------------------------------
@@ -73,33 +89,22 @@ def fetch_current_price(ticker_obj: yf.Ticker) -> float:
     """
     Extract the most recent closing price.
 
-    Tries the fast_info shortcut first; falls back to the last close
-    in the trailing 5-day history if fast_info is unavailable.
-
-    Returns
-    -------
-    float
-        Latest available price, rounded to 4 decimal places.
-
-    Raises
-    ------
-    ValueError
-        If no price can be determined.
+    Tries fast_info first; falls back to the last close in trailing history.
     """
     try:
         price = ticker_obj.fast_info.get("last_price") or ticker_obj.fast_info.get("previousClose")
-        if price:
+        if price and not np.isnan(price):
             return round(float(price), 4)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("fast_info retrieval failed for '%s': %s", getattr(ticker_obj, "ticker", "?"), exc)
 
     # Fallback: last close from short history window
     hist = ticker_obj.history(period="5d")
-    if hist.empty:
+    if hist.empty or "Close" not in hist or hist["Close"].dropna().empty:
         raise ValueError(
-            f"Could not retrieve current price for ticker '{ticker_obj.ticker}'."
+            f"Could not retrieve current price for ticker '{getattr(ticker_obj, 'ticker', '?')}'."
         )
-    return round(float(hist["Close"].iloc[-1]), 4)
+    return round(float(hist["Close"].dropna().iloc[-1]), 4)
 
 
 def fetch_sector(ticker_obj: yf.Ticker) -> str:
@@ -110,7 +115,9 @@ def fetch_sector(ticker_obj: yf.Ticker) -> str:
     """
     try:
         info = ticker_obj.info
-        return info.get("sector") or "Unknown"
+        if isinstance(info, dict):
+            return info.get("sector") or "Unknown"
+        return "Unknown"
     except Exception as exc:
         logger.warning("Could not fetch sector info: %s", exc)
         return "Unknown"
@@ -120,34 +127,29 @@ def fetch_historical_ohlcv(ticker_obj: yf.Ticker, period: str = HISTORY_PERIOD) 
     """
     Download OHLCV history for the requested period.
 
-    Parameters
-    ----------
-    ticker_obj : yf.Ticker
-    period     : str  yfinance period string, e.g. '1y', '6mo'
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with columns [Open, High, Low, Close, Volume].
-        Index is a timezone-naive DatetimeIndex (UTC dates).
-
-    Raises
-    ------
-    ValueError
-        If the returned DataFrame is empty.
+    Ensures chronological date ordering (oldest -> newest).
     """
-    logger.info("Fetching %s OHLCV history for '%s'", period, ticker_obj.ticker)
+    symbol = getattr(ticker_obj, "ticker", "?")
+    logger.info("Fetching %s OHLCV history for '%s'", period, symbol)
     df = ticker_obj.history(period=period)
 
     if df.empty:
         raise ValueError(
-            f"No historical data returned for '{ticker_obj.ticker}' "
-            f"with period='{period}'."
+            f"No historical data returned for '{symbol}' with period='{period}'."
         )
+
+    # Sort chronologically (oldest to newest)
+    df = df.sort_index(ascending=True)
 
     # Normalise index to timezone-naive UTC dates
     df.index = df.index.tz_localize(None) if df.index.tzinfo else df.index
-    return df[["Open", "High", "Low", "Close", "Volume"]]
+
+    required_cols = ["Open", "High", "Low", "Close", "Volume"]
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"Historical data for '{symbol}' missing required column '{col}'.")
+
+    return df[required_cols].dropna(subset=["Close"])
 
 
 # ---------------------------------------------------------------------------
@@ -157,17 +159,11 @@ def compute_daily_returns(close_series: pd.Series) -> pd.Series:
     """
     Calculate percentage daily returns from a closing price series.
 
-    Uses log returns (ln(P_t / P_{t-1})) which are additive over time
-    and better suited for volatility estimation than simple returns.
-
-    Parameters
-    ----------
-    close_series : pd.Series  Closing prices, chronologically ordered.
-
-    Returns
-    -------
-    pd.Series  Log returns, NaN-dropped.
+    Uses log returns (ln(P_t / P_{t-1})) which are additive over time.
     """
+    if close_series.empty or len(close_series) < 2:
+        return pd.Series(dtype=float)
+
     log_returns = np.log(close_series / close_series.shift(1))
     return log_returns.dropna()
 
@@ -178,17 +174,6 @@ def compute_annualized_volatility(
 ) -> float:
     """
     Compute annualized historical volatility (σ) from daily log returns.
-
-    Formula: σ_annual = σ_daily × √(trading_days)
-
-    Parameters
-    ----------
-    daily_returns : pd.Series
-    trading_days  : int  Defaults to 252 (NYSE standard).
-
-    Returns
-    -------
-    float  Annualized volatility rounded to 4 decimal places.
     """
     if daily_returns.empty:
         logger.warning("Empty returns series — volatility defaulting to 0.0")
@@ -205,25 +190,6 @@ def compute_annualized_volatility(
 def serialise_price_history(ohlcv_df: pd.DataFrame) -> list[dict]:
     """
     Convert OHLCV DataFrame into a JSON-serialisable list of dicts.
-
-    Each record has the shape::
-
-        {
-            "date":   "2024-01-15",
-            "open":   183.92,
-            "high":   185.10,
-            "low":    182.73,
-            "close":  184.40,
-            "volume": 67_432_100
-        }
-
-    Parameters
-    ----------
-    ohlcv_df : pd.DataFrame  Output of fetch_historical_ohlcv().
-
-    Returns
-    -------
-    list[dict]
     """
     records = []
     for date, row in ohlcv_df.iterrows():
@@ -241,13 +207,11 @@ def serialise_price_history(ohlcv_df: pd.DataFrame) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Public API — single entry point
+# Public API — single entry point with TTL Cache
 # ---------------------------------------------------------------------------
 def get_market_data(ticker: str) -> dict:
     """
-    Fetch and compute all market data for a single stock ticker.
-
-    This is the primary public interface for this module.
+    Fetch and compute all market data for a single stock ticker with TTL caching.
 
     Parameters
     ----------
@@ -256,24 +220,19 @@ def get_market_data(ticker: str) -> dict:
 
     Returns
     -------
-    dict with the following keys:
-
-    .. code-block:: python
-
-        {
-            "ticker":            str,   # Normalised uppercase ticker
-            "price":             float, # Latest available closing price
-            "volatility":        float, # Annualised historical volatility (σ)
-            "sector":            str,   # GICS sector or "Unknown"
-            "historical_prices": list,  # 1-year OHLCV records
-        }
-
-    Raises
-    ------
-    ValueError
-        If the ticker is invalid or data cannot be retrieved.
+    dict with keys: ticker, price, volatility, sector, historical_prices.
     """
     ticker = ticker.strip().upper()
+    now = time.time()
+
+    # Check cache first
+    with _CACHE_LOCK:
+        if ticker in _CACHE:
+            cached_time, cached_data = _CACHE[ticker]
+            if now - cached_time < CACHE_TTL_SECONDS:
+                logger.info("Serving market data for '%s' from TTL cache", ticker)
+                return copy.deepcopy(cached_data)
+
     logger.info("── Starting market data fetch for '%s' ──", ticker)
 
     # 1. Initialise yfinance object
@@ -301,6 +260,12 @@ def get_market_data(ticker: str) -> dict:
         daily_returns=daily_returns.tolist(),
     )
 
+    result_dict = result.to_dict()
+
+    # Store in cache
+    with _CACHE_LOCK:
+        _CACHE[ticker] = (now, copy.deepcopy(result_dict))
+
     logger.info(
         "Done — price=%.2f  volatility=%.4f  sector=%s  history=%d days",
         result.price,
@@ -309,7 +274,7 @@ def get_market_data(ticker: str) -> dict:
         len(result.historical_prices),
     )
 
-    return result.to_dict()
+    return result_dict
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +291,6 @@ if __name__ == "__main__":
         print("─" * 50)
         try:
             data = get_market_data(sym)
-            # Print summary without flooding the terminal with 252 price rows
             summary = {k: v for k, v in data.items() if k != "historical_prices"}
             summary["historical_prices"] = f"[{len(data['historical_prices'])} records]"
             print(json.dumps(summary, indent=2))

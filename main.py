@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -32,6 +33,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 # ---------------------------------------------------------------------------
 # Internal module imports
@@ -40,6 +42,15 @@ from esg_scoring import compute_esg_composite, simulate_esg_scores
 from market_data import get_market_data
 from risk_analysis import analyse_risk
 from investment_rating import generate_investment_rating
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -122,9 +133,12 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 # CORS middleware
 # ---------------------------------------------------------------------------
+cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:8501")
+CORS_ORIGINS = [origin.strip() for origin in cors_origins_raw.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8501"],   # Streamlit dashboard origin
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET"],
     allow_headers=["*"],
@@ -209,9 +223,10 @@ async def analyze_ticker(
         str,
         Path(
             title="Stock Ticker",
-            description="NYSE / NASDAQ stock ticker symbol, e.g. AAPL, TSLA, MSFT",
+            description="NYSE / NASDAQ stock ticker symbol, e.g. AAPL, TSLA, MSFT, BRK.B",
             min_length=1,
             max_length=10,
+            pattern=r"^[A-Za-z0-9.\-]+$",
         ),
     ],
     period: Annotated[
@@ -236,9 +251,9 @@ async def analyze_ticker(
     ticker = ticker.strip().upper()
     logger.info("── /analyze/%s — pipeline start ──", ticker)
 
-    # ── Step 1: Market Data ────────────────────────────────────────────────
+    # ── Step 1: Market Data (Threadpool execution for blocking I/O) ──────────
     try:
-        market = get_market_data(ticker)
+        market = await run_in_threadpool(get_market_data, ticker)
     except ValueError as exc:
         logger.warning("Market data unavailable for '%s': %s", ticker, exc)
         raise HTTPException(
@@ -247,7 +262,7 @@ async def analyze_ticker(
                    f"Verify the symbol is listed on a supported exchange.",
         )
     except Exception as exc:
-        logger.error("Unexpected error fetching market data for '%s': %s", ticker, exc)
+        logger.error("Unexpected error fetching market data for '%s': %s", ticker, exc, exc_info=True)
         raise HTTPException(
             status_code=502,
             detail="Failed to retrieve market data from the upstream provider.",
