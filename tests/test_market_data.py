@@ -114,6 +114,30 @@ def test_fetch_historical_ohlcv_empty_raises_value_error():
         fetch_historical_ohlcv(mock_ticker)
 
 
+def test_fetch_historical_ohlcv_multiindex_columns_flattened():
+    """Test that MultiIndex columns returned by yfinance are flattened successfully."""
+    dates = pd.date_range("2024-01-01", periods=3, freq="D")
+    tuples = [("Open", "AAPL"), ("High", "AAPL"), ("Low", "AAPL"), ("Close", "AAPL"), ("Volume", "AAPL")]
+    multi_cols = pd.MultiIndex.from_tuples(tuples)
+    df_multi = pd.DataFrame(
+        [
+            [100, 105, 99, 101, 1000],
+            [102, 106, 101, 103, 1100],
+            [101, 105, 100, 102, 1050],
+        ],
+        index=dates,
+        columns=multi_cols,
+    )
+
+    mock_ticker = MagicMock()
+    mock_ticker.ticker = "AAPL"
+    mock_ticker.history.return_value = df_multi
+
+    ohlcv = fetch_historical_ohlcv(mock_ticker)
+    assert list(ohlcv.columns) == ["Open", "High", "Low", "Close", "Volume"]
+    assert len(ohlcv) == 3
+
+
 @patch("market_data._fetch_ticker_object")
 def test_get_market_data_ttl_cache_isolation(mock_fetch):
     """Test that TTL cache serves repeated calls and isolates different tickers."""

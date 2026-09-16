@@ -55,21 +55,18 @@ def clear_cache() -> None:
 # ---------------------------------------------------------------------------
 @dataclass
 class MarketData:
-    """Strongly-typed container for all fetched and computed market data."""
+    """Strongly-typed container for all fetched and parsed market data."""
 
     ticker: str
     price: float
-    volatility: float
     sector: str
     historical_prices: list[dict]
-    daily_returns: list[float] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Return the canonical output dict expected by downstream modules."""
         return {
             "ticker": self.ticker,
             "price": self.price,
-            "volatility": self.volatility,
             "sector": self.sector,
             "historical_prices": self.historical_prices,
         }
@@ -138,6 +135,10 @@ def fetch_historical_ohlcv(ticker_obj: yf.Ticker, period: str = HISTORY_PERIOD) 
             f"No historical data returned for '{symbol}' with period='{period}'."
         )
 
+    # Handle MultiIndex columns if returned by yfinance
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     # Sort chronologically (oldest to newest)
     df = df.sort_index(ascending=True)
 
@@ -153,39 +154,7 @@ def fetch_historical_ohlcv(ticker_obj: yf.Ticker, period: str = HISTORY_PERIOD) 
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — Compute derived metrics
-# ---------------------------------------------------------------------------
-def compute_daily_returns(close_series: pd.Series) -> pd.Series:
-    """
-    Calculate percentage daily returns from a closing price series.
-
-    Uses log returns (ln(P_t / P_{t-1})) which are additive over time.
-    """
-    if close_series.empty or len(close_series) < 2:
-        return pd.Series(dtype=float)
-
-    log_returns = np.log(close_series / close_series.shift(1))
-    return log_returns.dropna()
-
-
-def compute_annualized_volatility(
-    daily_returns: pd.Series,
-    trading_days: int = TRADING_DAYS_PER_YEAR,
-) -> float:
-    """
-    Compute annualized historical volatility (σ) from daily log returns.
-    """
-    if daily_returns.empty:
-        logger.warning("Empty returns series — volatility defaulting to 0.0")
-        return 0.0
-
-    daily_std = float(np.std(daily_returns, ddof=1))
-    annualized = daily_std * np.sqrt(trading_days)
-    return round(annualized, 4)
-
-
-# ---------------------------------------------------------------------------
-# Step 3 — Serialise historical prices
+# Step 2 — Serialise historical prices
 # ---------------------------------------------------------------------------
 def serialise_price_history(ohlcv_df: pd.DataFrame) -> list[dict]:
     """
@@ -211,7 +180,7 @@ def serialise_price_history(ohlcv_df: pd.DataFrame) -> list[dict]:
 # ---------------------------------------------------------------------------
 def get_market_data(ticker: str) -> dict:
     """
-    Fetch and compute all market data for a single stock ticker with TTL caching.
+    Fetch and parse all market data for a single stock ticker with TTL caching.
 
     Parameters
     ----------
@@ -220,7 +189,7 @@ def get_market_data(ticker: str) -> dict:
 
     Returns
     -------
-    dict with keys: ticker, price, volatility, sector, historical_prices.
+    dict with keys: ticker, price, sector, historical_prices.
     """
     ticker = ticker.strip().upper()
     now = time.time()
@@ -243,21 +212,15 @@ def get_market_data(ticker: str) -> dict:
     sector = fetch_sector(ticker_obj)
     ohlcv_df = fetch_historical_ohlcv(ticker_obj)
 
-    # 3. Compute derived metrics
-    daily_returns = compute_daily_returns(ohlcv_df["Close"])
-    volatility = compute_annualized_volatility(daily_returns)
-
-    # 4. Serialise history
+    # 3. Serialise history
     price_history = serialise_price_history(ohlcv_df)
 
-    # 5. Assemble result
+    # 4. Assemble result
     result = MarketData(
         ticker=ticker,
         price=current_price,
-        volatility=volatility,
         sector=sector,
         historical_prices=price_history,
-        daily_returns=daily_returns.tolist(),
     )
 
     result_dict = result.to_dict()
@@ -267,9 +230,8 @@ def get_market_data(ticker: str) -> dict:
         _CACHE[ticker] = (now, copy.deepcopy(result_dict))
 
     logger.info(
-        "Done — price=%.2f  volatility=%.4f  sector=%s  history=%d days",
+        "Done — price=%.2f  sector=%s  history=%d days",
         result.price,
-        result.volatility,
         result.sector,
         len(result.historical_prices),
     )

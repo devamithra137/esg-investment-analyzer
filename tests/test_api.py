@@ -45,7 +45,6 @@ def test_analyze_ticker_success(mock_get_market_data):
         "ticker": "AAPL",
         "price": 189.40,
         "sector": "Technology",
-        "volatility": 0.2312,
         "historical_prices": [
             {"date": "2024-01-01", "open": 185.0, "high": 190.0, "low": 184.0, "close": 185.0, "volume": 1000},
             {"date": "2024-01-02", "open": 185.0, "high": 190.0, "low": 184.0, "close": 186.5, "volume": 1050},
