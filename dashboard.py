@@ -33,8 +33,20 @@ st.set_page_config(
 )
 
 # ── Constants ───────────────────────────────────────────────────────────────
+def _get_request_timeout() -> int:
+    raw = os.getenv("REQUEST_TIMEOUT")
+    if raw is not None:
+        try:
+            val = int(raw.strip())
+            if val > 0:
+                return val
+        except ValueError:
+            pass
+    return 30
+
+
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = _get_request_timeout()
 
 RATING_META = {
     "High Sustainability": {"color": "#00e5a0", "icon": "▲", "bg": "rgba(0,229,160,0.08)"},

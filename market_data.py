@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import os
 import time
 from dataclasses import dataclass
 from threading import Lock
@@ -32,8 +33,20 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants & Cache Configuration
 # ---------------------------------------------------------------------------
+def _get_cache_ttl() -> int:
+    raw = os.getenv("CACHE_TTL_SECONDS")
+    if raw is not None:
+        try:
+            val = int(raw.strip())
+            if val >= 0:
+                return val
+        except ValueError:
+            pass
+    return 600
+
+
 HISTORY_PERIOD: str = "1y"          # yfinance period string for 1 year
-CACHE_TTL_SECONDS: int = 600        # 10 minutes cache TTL
+CACHE_TTL_SECONDS: int = _get_cache_ttl()  # default 10 minutes cache TTL
 
 # Thread-safe in-memory cache: ticker -> (timestamp, data_dict)
 _CACHE: dict[str, tuple[float, dict]] = {}

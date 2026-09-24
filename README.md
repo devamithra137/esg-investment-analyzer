@@ -145,6 +145,8 @@ esg-investment-analyzer
 |----------|---------------|-------------|
 | `API_BASE_URL` | `http://localhost:8000` | Backend API base URL used by Streamlit dashboard |
 | `CORS_ORIGINS` | `http://localhost:8501` | Comma-separated CORS allowed origins for FastAPI |
+| `CACHE_TTL_SECONDS` | `600` | In-memory market data TTL cache duration in seconds |
+| `REQUEST_TIMEOUT` | `30` | HTTP request timeout in seconds for Streamlit dashboard API calls |
 
 ---
 
