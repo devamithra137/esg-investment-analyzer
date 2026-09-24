@@ -2,7 +2,6 @@
 market_data.py
 --------------
 Fetches real-time and historical stock market data using yfinance.
-Computes daily returns and annualized volatility.
 Includes thread-safe in-memory TTL caching (10 minutes) for fast repeat queries.
 
 Author  : ESG Investment Analyzer
@@ -14,9 +13,8 @@ from __future__ import annotations
 import copy
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import Lock
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -35,7 +33,6 @@ logger = logging.getLogger(__name__)
 # Constants & Cache Configuration
 # ---------------------------------------------------------------------------
 HISTORY_PERIOD: str = "1y"          # yfinance period string for 1 year
-TRADING_DAYS_PER_YEAR: int = 252    # standard annualisation factor
 CACHE_TTL_SECONDS: int = 600        # 10 minutes cache TTL
 
 # Thread-safe in-memory cache: ticker -> (timestamp, data_dict)

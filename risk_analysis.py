@@ -96,6 +96,9 @@ def _validate_prices(prices: list[Union[int, float]]) -> pd.Series:
             f"received {len(series)}."
         )
 
+    if np.isinf(series).any():
+        raise ValueError("Price series contains infinite values.")
+
     non_positive = series[series <= 0]
     if not non_positive.empty:
         raise ValueError(

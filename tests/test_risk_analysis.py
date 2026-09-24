@@ -101,3 +101,12 @@ def test_analyse_risk_invalid_types_raises_error():
 
     with pytest.raises(TypeError, match="Expected a list or array-like"):
         analyse_risk({"price": 100})
+
+
+def test_analyse_risk_infinite_prices_raises_error():
+    """Verify ValueError when price series contains infinite values."""
+    with pytest.raises(ValueError, match="infinite values"):
+        analyse_risk([100.0, float("inf"), 102.0])
+
+    with pytest.raises(ValueError, match="infinite values"):
+        analyse_risk([100.0, float("-inf"), 102.0])
