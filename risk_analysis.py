@@ -161,11 +161,13 @@ def compute_volatility(
     -------
     float  Annualised volatility, rounded to 6 decimal places.
     """
-    if daily_returns.empty:
-        logger.warning("Empty returns series — volatility defaulting to 0.0")
+    if daily_returns.empty or len(daily_returns) < 2:
+        logger.warning("Fewer than 2 return observations — volatility defaulting to 0.0")
         return 0.0
 
-    sigma_daily  = float(np.std(daily_returns, ddof=1))
+    sigma_daily = float(np.std(daily_returns, ddof=1))
+    if np.isnan(sigma_daily):
+        return 0.0
     sigma_annual = sigma_daily * np.sqrt(trading_days)
     return round(sigma_annual, 6)
 

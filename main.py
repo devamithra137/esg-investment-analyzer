@@ -60,8 +60,8 @@ logger = logging.getLogger(__name__)
 class AnalysisResponse(BaseModel):
     """Full analysis result returned by GET /analyze/{ticker}."""
 
-    ticker:           str   = Field(..., description="Normalised stock ticker symbol")
-    price:            float = Field(..., description="Latest closing price (USD)")
+    ticker:           str   = Field(..., min_length=1, max_length=10, description="Normalised stock ticker symbol")
+    price:            float = Field(..., gt=0, description="Latest closing price (USD)")
     sector:           str   = Field(..., description="GICS sector classification")
 
     # ESG breakdown
@@ -71,12 +71,12 @@ class AnalysisResponse(BaseModel):
     esg_score:        float = Field(..., ge=0, le=100, description="Weighted composite ESG score (0-100)")
 
     # Risk metrics
-    volatility:       float = Field(..., description="Annualised historical volatility (σ)")
-    risk_level:       str   = Field(..., description="Risk tier: LOW | MEDIUM | HIGH")
+    volatility:       float = Field(..., ge=0, description="Annualised historical volatility (σ)")
+    risk_level:       str   = Field(..., pattern=r"^(LOW|MEDIUM|HIGH)$", description="Risk tier: LOW | MEDIUM | HIGH")
 
     # Investment rating
     investment_score: int   = Field(..., ge=0, le=100, description="Blended investment score (0-100)")
-    rating:           str   = Field(..., description="Investment Sustainability Rating")
+    rating:           str   = Field(..., pattern=r"^(High Sustainability|Sustainable Growth|High Risk)$", description="Investment Sustainability Rating")
 
     model_config = {"json_schema_extra": {
         "example": {
@@ -306,11 +306,17 @@ async def analyze_ticker(
             detail="Failed to retrieve market data from the upstream provider.",
         )
 
-    price   = market["price"]
-    sector  = market["sector"]
-    history = market["historical_prices"]
+    price   = market.get("price")
+    sector  = market.get("sector") or "Unknown"
+    history = market.get("historical_prices")
 
-    if not history:
+    if price is None or not isinstance(price, (int, float)) or price <= 0 or not np.isfinite(price):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid market price data received for ticker '{ticker}'.",
+        )
+
+    if not history or not isinstance(history, list):
         raise HTTPException(
             status_code=404,
             detail=f"Historical price data is unavailable for '{ticker}'.",

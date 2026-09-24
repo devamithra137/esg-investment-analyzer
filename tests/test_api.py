@@ -104,3 +104,106 @@ def test_analyze_ticker_upstream_error_returns_502(mock_get_market_data):
     assert "Failed to retrieve market data" in data["detail"]
     assert data["code"] == 502
     assert data["ticker"] == "AAPL"
+
+
+@patch("main.get_market_data")
+def test_analyze_ticker_response_field_types_and_ranges(mock_get_market_data):
+    """Verify exact schema, field types, and numeric constraints of AnalysisResponse."""
+    mock_get_market_data.return_value = {
+        "ticker": "AAPL",
+        "price": 220.50,
+        "sector": "Technology",
+        "historical_prices": [
+            {"date": f"2024-01-0{i}", "open": 200 + i, "high": 205 + i, "low": 198 + i, "close": 201 + i, "volume": 1000}
+            for i in range(1, 6)
+        ],
+    }
+
+    response = client.get("/analyze/AAPL")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Types
+    assert isinstance(data["ticker"], str)
+    assert isinstance(data["price"], (float, int))
+    assert isinstance(data["sector"], str)
+    assert isinstance(data["environment"], (float, int))
+    assert isinstance(data["social"], (float, int))
+    assert isinstance(data["governance"], (float, int))
+    assert isinstance(data["esg_score"], (float, int))
+    assert isinstance(data["volatility"], (float, int))
+    assert isinstance(data["risk_level"], str)
+    assert isinstance(data["investment_score"], int)
+    assert isinstance(data["rating"], str)
+
+    # Numeric range invariants
+    assert data["price"] > 0
+    assert 0 <= data["environment"] <= 100
+    assert 0 <= data["social"] <= 100
+    assert 0 <= data["governance"] <= 100
+    assert 0 <= data["esg_score"] <= 100
+    assert data["volatility"] >= 0
+    assert 0 <= data["investment_score"] <= 100
+
+    # Categorical tiers
+    assert data["risk_level"] in {"LOW", "MEDIUM", "HIGH"}
+    assert data["rating"] in {"High Sustainability", "Sustainable Growth", "High Risk"}
+
+
+@patch("main.get_market_data")
+def test_analyze_ticker_normalized_ticker_behavior(mock_get_market_data):
+    """Verify lowercase input ticker symbol is normalized to uppercase in output."""
+    mock_get_market_data.return_value = {
+        "ticker": "MSFT",
+        "price": 415.00,
+        "sector": "Technology",
+        "historical_prices": [
+            {"date": "2024-01-01", "open": 410.0, "high": 420.0, "low": 408.0, "close": 412.0, "volume": 1000},
+            {"date": "2024-01-02", "open": 412.0, "high": 422.0, "low": 410.0, "close": 415.0, "volume": 1000},
+        ],
+    }
+
+    response = client.get("/analyze/msft")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ticker"] == "MSFT"
+
+
+@patch("main.get_market_data")
+def test_analyze_ticker_invalid_price_returns_422(mock_get_market_data):
+    """Verify that non-positive or corrupt market price triggers HTTP 422."""
+    mock_get_market_data.return_value = {
+        "ticker": "AAPL",
+        "price": -10.0,  # Invalid price
+        "sector": "Technology",
+        "historical_prices": [
+            {"date": "2024-01-01", "open": 100.0, "high": 105.0, "low": 98.0, "close": 100.0, "volume": 1000},
+            {"date": "2024-01-02", "open": 100.0, "high": 105.0, "low": 98.0, "close": 102.0, "volume": 1000},
+        ],
+    }
+
+    response = client.get("/analyze/AAPL")
+    assert response.status_code == 422
+    data = response.json()
+    assert data["code"] == 422
+    assert "Invalid market price data" in data["detail"]
+
+
+@patch("main.get_market_data")
+def test_analyze_ticker_corrupt_history_prices_returns_422(mock_get_market_data):
+    """Verify that corrupt historical price observations (e.g. negative prices) trigger HTTP 422."""
+    mock_get_market_data.return_value = {
+        "ticker": "AAPL",
+        "price": 100.0,
+        "sector": "Technology",
+        "historical_prices": [
+            {"date": "2024-01-01", "open": 100.0, "high": 105.0, "low": 98.0, "close": 100.0, "volume": 1000},
+            {"date": "2024-01-02", "open": 100.0, "high": 105.0, "low": 98.0, "close": -50.0, "volume": 1000},  # Corrupt
+        ],
+    }
+
+    response = client.get("/analyze/AAPL")
+    assert response.status_code == 422
+    data = response.json()
+    assert data["code"] == 422
+    assert "strictly positive" in data["detail"]
