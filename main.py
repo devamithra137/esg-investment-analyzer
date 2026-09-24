@@ -336,9 +336,8 @@ async def analyze_ticker(
     )
 
     # ── Step 3: Risk Analysis ──────────────────────────────────────────────
-    close_prices = [day["close"] for day in history]
     try:
-        risk = analyse_risk(close_prices)
+        risk = analyse_risk(history)
     except ValueError as exc:
         logger.warning("Risk analysis failed for '%s': %s", ticker, exc)
         raise HTTPException(status_code=422, detail=str(exc))

@@ -136,8 +136,7 @@ def run_analysis(ticker: str) -> dict:
     )
 
     # Step 3 — Risk analysis
-    close_prices = [day["close"] for day in history]
-    risk = analyse_risk(close_prices)
+    risk = analyse_risk(history)
 
     # Step 4 — Investment rating
     rating = generate_investment_rating(

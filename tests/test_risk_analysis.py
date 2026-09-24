@@ -76,6 +76,23 @@ def test_analyse_risk_pipeline():
     assert result["risk_level"] in ["LOW", "MEDIUM", "HIGH"]
 
 
+def test_analyse_risk_ohlcv_history_dict_input():
+    """Test analyse_risk when passed a list of OHLCV history dictionaries."""
+    history = [
+        {"date": "2024-01-01", "open": 100.0, "high": 105.0, "low": 99.0, "close": 100.0, "volume": 1000},
+        {"date": "2024-01-02", "open": 101.0, "high": 106.0, "low": 100.0, "close": 101.5, "volume": 1000},
+        {"date": "2024-01-03", "open": 100.0, "high": 103.0, "low": 98.0, "close": 99.8, "volume": 1000},
+        {"date": "2024-01-04", "open": 101.0, "high": 104.0, "low": 100.0, "close": 102.3, "volume": 1000},
+        {"date": "2024-01-05", "open": 102.0, "high": 105.0, "low": 101.0, "close": 101.1, "volume": 1000},
+    ]
+    result = analyse_risk(history)
+
+    assert "volatility" in result
+    assert "risk_level" in result
+    assert isinstance(result["volatility"], float)
+    assert result["risk_level"] in ["LOW", "MEDIUM", "HIGH"]
+
+
 def test_analyse_risk_insufficient_prices_raises_error():
     """Verify ValueError when fewer than 2 price observations are provided."""
     with pytest.raises(ValueError, match="valid price observations are required"):

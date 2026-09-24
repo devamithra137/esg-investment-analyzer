@@ -59,19 +59,23 @@ _RISK_THRESHOLDS: list[tuple[float, RiskLevel]] = [
 # ---------------------------------------------------------------------------
 # Step 1 — Input validation & normalisation
 # ---------------------------------------------------------------------------
-def _validate_prices(prices: list[Union[int, float]]) -> pd.Series:
+def _validate_prices(prices: Union[list[Union[int, float]], list[dict], pd.Series]) -> pd.Series:
     """
-    Validate and coerce the raw price list to a clean float Series.
+    Validate and coerce raw price data to a clean float Series.
+
+    Accepts:
+    - 1-D sequence of numeric prices (list, tuple, numpy array, pd.Series).
+    - List of OHLCV history dictionaries containing 'close' or 'Close' keys.
 
     Validations
     -----------
-    - Must be a non-empty list or 1-D array-like (not a string / dict).
+    - Must be a non-empty sequence.
     - After dropping NaN, must have >= MIN_OBSERVATIONS values.
-    - All values must be strictly positive.
+    - All values must be strictly positive and finite.
 
     Parameters
     ----------
-    prices : list[int | float]
+    prices : list[int | float] | list[dict] | pd.Series
 
     Returns
     -------
@@ -82,6 +86,14 @@ def _validate_prices(prices: list[Union[int, float]]) -> pd.Series:
     TypeError   If the input is not iterable or has the wrong shape.
     ValueError  If the series is too short or contains non-positive values.
     """
+    if isinstance(prices, list) and prices and isinstance(prices[0], dict):
+        if "close" in prices[0]:
+            prices = [item["close"] for item in prices if "close" in item]
+        elif "Close" in prices[0]:
+            prices = [item["Close"] for item in prices if "Close" in item]
+        else:
+            raise ValueError("Historical price dictionaries must contain 'close' or 'Close' key.")
+
     if not hasattr(prices, "__iter__") or isinstance(prices, (str, dict)):
         raise TypeError(
             f"Expected a list or array-like of numeric prices, "
