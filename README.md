@@ -260,7 +260,19 @@ pytest -v
 
 ---
 
-# Example API Response
+# Example API Responses
+
+### `GET /health` (Health & Liveness Probe)
+
+```json
+{
+  "status": "healthy",
+  "service": "ESG Investment Analyzer",
+  "version": "1.0.0"
+}
+```
+
+### `GET /analyze/AAPL` (Full Analysis)
 
 ```json
 {

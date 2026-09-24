@@ -98,6 +98,23 @@ class AnalysisResponse(BaseModel):
     }}
 
 
+class HealthResponse(BaseModel):
+    """Structured response for health and liveness probe."""
+    status:  str = Field(..., description="Service health status (e.g. 'healthy')")
+    service: str = Field(..., description="Service identifier")
+    version: str = Field(..., description="API semantic version")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "status": "healthy",
+                "service": "ESG Investment Analyzer",
+                "version": "1.0.0",
+            }
+        }
+    }
+
+
 class ErrorResponse(BaseModel):
     """Structured error payload matching OpenAPI specification."""
     detail: str = Field(..., description="Human-readable error message")
@@ -234,10 +251,20 @@ async def root():
     }
 
 
-@app.get("/health", tags=["System"])
-async def health_check():
-    """Liveness probe — returns 200 if the service is running."""
-    return {"status": "ok"}
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Health and Liveness Probe",
+    description="Lightweight liveness probe that verifies the FastAPI application process is healthy without external network dependencies.",
+    tags=["System"],
+)
+async def health_check() -> HealthResponse:
+    """Liveness probe — returns 200 if the service is running and healthy."""
+    return HealthResponse(
+        status="healthy",
+        service="ESG Investment Analyzer",
+        version="1.0.0",
+    )
 
 
 @app.get(

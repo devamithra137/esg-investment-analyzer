@@ -31,11 +31,16 @@ def test_root_endpoint():
     assert "X-Process-Time" in response.headers
 
 
-def test_health_check_endpoint():
-    """Test system liveness probe GET /health."""
+@patch("main.get_market_data")
+def test_health_check_endpoint(mock_get_market_data):
+    """Test system liveness probe GET /health returns structured status and makes no external calls."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert data["service"] == "ESG Investment Analyzer"
+    assert data["version"] == "1.0.0"
+    assert mock_get_market_data.call_count == 0
 
 
 @patch("main.get_market_data")
