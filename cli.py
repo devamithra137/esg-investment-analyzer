@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import logging
 import sys
 import time
 from datetime import datetime
@@ -31,6 +32,16 @@ def _configure_output_encoding() -> None:
             sys.stdout.reconfigure(encoding="utf-8")
         except Exception:
             pass
+
+
+def _configure_logging(verbose: bool = False) -> None:
+    """Configure CLI logging — suppressed to WARNING by default to preserve clean terminal report formatting."""
+    log_level = logging.DEBUG if verbose else logging.WARNING
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    )
+
 
 from esg_scoring import compute_esg_composite, simulate_esg_scores
 from investment_rating import generate_investment_rating
@@ -280,6 +291,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         help="One or more stock ticker symbols (e.g. AAPL TSLA MSFT)",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable diagnostic logger output",
+    )
     return parser
 
 
@@ -287,6 +304,7 @@ def main() -> None:
     _configure_output_encoding()
     parser = build_arg_parser()
     args   = parser.parse_args()
+    _configure_logging(verbose=args.verbose)
 
     tickers   = [t.strip().upper() for t in args.tickers]
     successes = 0

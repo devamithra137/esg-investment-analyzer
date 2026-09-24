@@ -47,8 +47,11 @@ from investment_rating import generate_investment_rating
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+LOG_LEVEL_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_LEVEL = getattr(logging, LOG_LEVEL_NAME, logging.INFO)
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=LOG_LEVEL,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger(__name__)
