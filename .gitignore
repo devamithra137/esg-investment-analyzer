@@ -7,5 +7,7 @@ __pycache__/
 # Test and coverage artifacts
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
-*.egg-info/
+*.egg-info/
