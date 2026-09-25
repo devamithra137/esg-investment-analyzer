@@ -7,6 +7,7 @@ Financial Analytics · ESG Risk · Sustainability Rating
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.33+-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
+[![CI](https://github.com/devamithra137/esg-investment-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/devamithra137/esg-investment-analyzer/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-00D4AA?style=flat-square)](LICENSE)
 
 A modular Python fintech analytics platform that evaluates companies using ESG metrics and financial risk indicators.
@@ -246,16 +247,18 @@ python cli.py TSLA MSFT NVDA
 
 # Running Automated Tests
 
-Run the full automated test suite offline:
+Automated testing is executed via **GitHub Actions CI** on all pushes to `main` and all pull requests targeting `main`.
+
+Run the full automated test suite locally:
 
 ```bash
-pytest
+python -m pytest -q
 ```
 
 Verbose test output:
 
 ```bash
-pytest -v
+python -m pytest -v
 ```
 
 ---
