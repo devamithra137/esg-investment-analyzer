@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 .streamlit/
 .vscode/
+.DS_Store
 
 # Test and coverage artifacts
 .pytest_cache/
